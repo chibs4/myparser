@@ -1,17 +1,13 @@
 from bs4 import BeautifulSoup
-from collections import deque
-
 from url_validator import validate_url
-from storage import DomainInfo, disallowed_domains, internal_links_queue
+
+# from storage import DomainInfo, disallowed_domains, internal_links_queue
 from utils import is_internal
+from storage import Storage
+from settings import ALLOW_REDIRECT
 
 
-def extract_links(
-    url: str,
-    html: str,
-    main_storage: dict[str, DomainInfo],
-    external_link_storage: deque[list],
-):
+def extract_links(url: str, html: str, storage: Storage):
     """Finds links in html on domain and separates them into two groups:
     internal and external."""
     domain = validate_url(url)
@@ -21,18 +17,13 @@ def extract_links(
     for link in all_links:
         href = link["href"]
         if is_internal(domain, href):
+            if domain in href:
+                href = href.split(domain)[-1]
             internal.add(href)
         else:
             external.add(href)
     # adding sets to storages
-    if external:
-        allowed_external = external.difference(disallowed_domains)
-        external_link_storage += allowed_external
+    if external and ALLOW_REDIRECT:
+        storage.update_external_links(external)
     if internal:
-        if domain in main_storage:
-            allowed_internal = internal.difference(main_storage[domain].crawled_links)
-            main_storage[domain].internal_links.update(allowed_external)
-        else:
-            new_domain = DomainInfo(internal_links=internal)
-            main_storage[domain] = new_domain
-        internal_links_queue.append(domain)
+        storage.update_or_create_domain_info(domain, links=internal, success_count=0)
